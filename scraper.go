@@ -7,6 +7,7 @@ import (
 	"github.com/chromedp/chromedp"
 	"log"
 	"os"
+	"strconv"
 )
 
 type mapNodesOperation func(nodes []*cdp.Node) []string
@@ -14,7 +15,10 @@ type mapNodesOperation func(nodes []*cdp.Node) []string
 func main() {
 	var nodes = getNodesBySelector("section.supported-document", "tbody.list>tr>td")
 	var mappedNodes = mapNodes(nodes, mapToCountries)
-	writeToFile(mappedNodes, "countries.txt")
+	var divided = divideIntoChunksOf25(mappedNodes)
+	for i, d := range divided {
+		writeToFile(format(d, i), "countries"+strconv.Itoa(i)+".json")
+	}
 }
 
 func getNodesBySelector(waitVisibleSelector string, nodesSelector string) []*cdp.Node {
@@ -34,26 +38,47 @@ func getNodesBySelector(waitVisibleSelector string, nodesSelector string) []*cdp
 func mapNodes(nodes []*cdp.Node, fn mapNodesOperation) []string {
 	return fn(nodes)
 }
-
-func writeToFile(countries []string, fileName string) {
-	f, err := os.Create(fileName)
-	if err != nil {
-		fmt.Println(err)
+func format(countries []string, iteration int) string {
+	formatted := "{\n  \"dev-onfido-supported-countries\": [\n"
+	for i, c := range countries {
+		var id = 25*iteration + i
+		formatted = formatted + "{\n\"PutRequest\":{\n\"Item\":{\n\"id\":{\n\"N\":\"" + strconv.Itoa(id) + "\"\n},\n\"country\":{\n\"S\":\"" + c + "\"\n}\n}\n}\n},"
+	}
+	formatted = formatted + "\n]\n}"
+	return formatted
+}
+func writeToFile(content string, fileName string) {
+	fmt.Println("Writing file " + fileName)
+	f, errCreate := os.Create(fileName)
+	if errCreate != nil {
+		fmt.Println(errCreate)
 		return
 	}
 
-	for _, c := range countries {
-		_, err := f.WriteString(c + "\n")
-		if err != nil {
-			fmt.Println(err)
-			f.Close()
-			return
+	_, errWrite := f.WriteString(content)
+	if errWrite != nil {
+		fmt.Println(errWrite)
+		f.Close()
+		return
+	}
+
+	errClose := f.Close()
+	if errClose != nil {
+		fmt.Println(errClose)
+		return
+	}
+}
+
+func divideIntoChunksOf25(countries []string) [][]string {
+	chunkSize := 25
+	var divided [][]string
+
+	for i := 0; i < len(countries); i += chunkSize {
+		end := i + chunkSize
+		if end > len(countries) {
+			end = len(countries)
 		}
+		divided = append(divided, countries[i:end])
 	}
-
-	err = f.Close()
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	return divided
 }
